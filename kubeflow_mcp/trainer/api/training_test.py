@@ -35,7 +35,6 @@ from kubeflow_mcp.trainer.api.training import (
     _has_train_call,
     _inject_trainer_hf_home,
     _make_train_func,
-    _should_apply_hf_dataset_workaround,
     _uncalled_train_call,
     _validate_resources_per_node,
     fine_tune,
@@ -934,18 +933,6 @@ def test_uncalled_train_call_skips_when_already_called():
     assert _uncalled_train_call(script) == []
 
 
-@pytest.mark.parametrize(
-    "dataset,expected",
-    [
-        ("hf://org/dataset", True),
-        ("hf://org/dataset/subpath", False),
-        ("s3://bucket/ds", False),
-    ],
-)
-def test_should_apply_hf_dataset_workaround(dataset, expected):
-    assert _should_apply_hf_dataset_workaround(dataset) is expected
-
-
 def test_build_fine_tune_config_masks_secrets():
     config = _build_fine_tune_config(
         model="hf://org/model",
@@ -1130,3 +1117,39 @@ class TestBuildRuntimePatch:
         assert [type(o).__name__ for o in options] == ["Labels", "Annotations"]
         assert options[0].labels == {"team": "ml"}
         assert options[1].annotations == {"owner": "alice"}
+
+
+
+def test_finetune_top_level_hf_dataset_passes_real_sdk_option_validation():
+    """Regression for #494: BuiltinTrainer must reach the SDK create boundary."""
+    from kubeflow.trainer.backends.kubernetes.backend import KubernetesBackend
+
+    backend = KubernetesBackend.__new__(KubernetesBackend)
+    backend.namespace = "default"
+    backend.custom_api = MagicMock()
+
+    with (
+        patch(PATCH_CLIENT, return_value=backend),
+        patch(PATCH_NS_CHECK, return_value=None),
+        patch(PATCH_GPU_CHECK, return_value=None),
+        patch(
+            "kubeflow_mcp.trainer.api.training._check_hf_repos_exist",
+            return_value=None,
+        ),
+    ):
+        result = fine_tune(
+            model="hf://meta-llama/Llama-3.2-1B",
+            dataset="hf://tatsu-lab/alpaca",
+            runtime="torchtune-llama3.2-1b",
+            namespace="default",
+            batch_size=2,
+            epochs=3,
+            dtype="bf16",
+            lora_rank=16,
+            lora_alpha=32,
+            dataset_source="json",
+            confirmed=True,
+        )
+
+    assert result["success"] is True, result
+    backend.custom_api.create_namespaced_custom_object.assert_called_once()
