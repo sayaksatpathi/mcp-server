@@ -28,7 +28,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
-from kubeflow.trainer.constants.constants import DATASET_PATH, DEFAULT_PIP_INDEX_URLS
+from kubeflow.trainer.constants.constants import DEFAULT_PIP_INDEX_URLS
 
 from kubeflow_mcp.common.constants import ErrorCode
 from kubeflow_mcp.common.types import PreviewResponse, ToolError, ToolResponse
@@ -316,19 +316,6 @@ def _inject_ownership_label(options: list) -> list:
             return options
     options.append(Labels(labels={MCP_MANAGED_LABEL: MCP_MANAGED_VALUE}))
     return options
-
-
-def _should_apply_hf_dataset_workaround(dataset: str) -> bool:
-    """Return True if dataset is a top-level HuggingFace URI that triggers SDK bug #32.
-
-    HuggingFace dataset IDs are always ``org/name`` (exactly 2 segments).
-    Single-segment URIs like ``hf://ds`` are invalid and rejected.
-    URIs with subpaths like ``hf://org/ds/subpath`` don't trigger the bug.
-    """
-    if not dataset.startswith("hf://"):
-        return False
-    hf_repo = dataset.removeprefix("hf://").strip("/")
-    return bool(hf_repo and len(hf_repo.split("/")) == 2)
 
 
 _HF_REPO_PART_RE = re.compile(r"[a-zA-Z0-9._-]+")
